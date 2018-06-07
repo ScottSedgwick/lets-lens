@@ -41,7 +41,7 @@ This series of exercises is similar to `Lets.GetSetLens`, however, using a
 slightly altered representation of a lens, based on the `Store` comonad, which
 fuses the typical `get` and `set` operations into a data structure. This
 representation is described in detail in
-*Morris, Tony. "Asymmetric Lenses in Scala." (2012).*
+*Morris, Tony. "[Asymmetric Lenses in Scala](http://days2012.scala-lang.org/sites/days2012/files/morris_lenses.pdf)." (2012).*
 
 ##### `Lets.OpticPolyLens`
 

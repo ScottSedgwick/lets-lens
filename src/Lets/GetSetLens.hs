@@ -155,7 +155,8 @@ fmodify l f a = (set l a) <$> (f (get l a))
 -- >>> (fstL |= (+1) $ (3, "abc")) 17
 -- (18,"abc")
 (|=) :: Functor f => Lens a b -> f b -> a -> f a
-(|=) l fb a = fmap (set l a) fb
+--(|=) l fb a = (set l a) <$> fb
+(|=) l fb = fmodify l (\_ -> fb)
 
 infixl 5 |=
 

@@ -143,12 +143,9 @@ infixl 5 .~
 -- >>> fmodify fstL (\n -> bool Nothing (Just (n * 2)) (even n)) (11, "abc")
 -- Nothing
 fmodify :: Functor f => Lens a b -> (b -> f b) -> a -> f a
-fmodify (Lens s g) f a = (s a) <$> (f (g a))
+fmodify l f a = (set l a) <$> (f (get l a))
 
--- fmodify (Lens _ getter) modifier orig = setter' orig (modifier (getter orig))
---   where
---     setter' :: Functor f => a -> f b -> f a
---     setter' = (<$)
+
 
 -- |
 --

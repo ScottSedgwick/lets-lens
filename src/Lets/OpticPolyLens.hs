@@ -133,14 +133,6 @@ fmodify :: Functor f => Lens s t a b -> (a -> f b) -> s -> f t
 fmodify (Lens r) f s = r f s
 
 
--- r :: Functor g => (a -> g b) -> s -> g t
--- over :: Lens' s a -> (a -> a) -> s -> s
--- over ln f = getIdentity . ln (Identity . f)
-
-
-
-
-
 -- |
 --
 -- >>> fstL |= Just 3 $ (7, "abc")

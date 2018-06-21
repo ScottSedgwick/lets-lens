@@ -143,9 +143,12 @@ infixl 5 .~
 -- >>> fmodify fstL (\n -> bool Nothing (Just (n * 2)) (even n)) (11, "abc")
 -- Nothing
 fmodify :: Functor f => Lens a b -> (b -> f b) -> a -> f a
-fmodify l f a = (set l a) <$> (f (get l a))
+fmodify (Lens s g) f a = (s a) <$> (f (g a))
 
-
+-- fmodify (Lens _ getter) modifier orig = setter' orig (modifier (getter orig))
+--   where
+--     setter' :: Functor f => a -> f b -> f a
+--     setter' = (<$)
 
 -- |
 --
@@ -155,7 +158,6 @@ fmodify l f a = (set l a) <$> (f (get l a))
 -- >>> (fstL |= (+1) $ (3, "abc")) 17
 -- (18,"abc")
 (|=) :: Functor f => Lens a b -> f b -> a -> f a
---(|=) l fb a = (set l a) <$> fb
 (|=) l fb = fmodify l (\_ -> fb)
 
 infixl 5 |=
@@ -170,11 +172,9 @@ infixl 5 |=
 -- prop> let types = (x :: Int, y :: String) in setgetLaw fstL (x, y) z
 --
 -- prop> let types = (x :: Int, y :: String) in setsetLaw fstL (x, y) z
-fstL ::
-  Lens (x, y) x
-fstL = Lens
-       (\(_,y) z -> (z,y))
-       (\(x,_) -> x)
+fstL :: Lens (x, y) x
+fstL = Lens (\(_,y) z -> (z,y))
+            (\(x,_) -> x)
 
 -- |
 --
@@ -186,11 +186,9 @@ fstL = Lens
 -- prop> let types = (x :: Int, y :: String) in setgetLaw sndL (x, y) z
 --
 -- prop> let types = (x :: Int, y :: String) in setsetLaw sndL (x, y) z
-sndL ::
-  Lens (x, y) y
-sndL = Lens
-        (\(x,_) z -> (x,z))
-        (\(_,y) -> y)
+sndL :: Lens (x, y) y
+sndL = Lens (\(x,_) z -> (x,z))
+            (\(_,y) -> y)
 
 -- |
 --
@@ -212,11 +210,8 @@ sndL = Lens
 -- >>> set (mapL 33) (Map.fromList (map (\c -> (ord c - 96, c)) ['a'..'d'])) Nothing
 -- fromList [(1,'a'),(2,'b'),(3,'c'),(4,'d')]
 mapL :: Ord k => k -> Lens (Map k v) (Maybe v)
-mapL k = Lens
-         (\mkv mv -> case mv of
-                       Nothing  -> Map.delete k mkv
-                       (Just v) -> Map.insert k v mkv)
-         (\mkv -> Map.lookup k mkv)
+mapL k = Lens (\mkv -> maybe (Map.delete k mkv) (\v -> Map.insert k v mkv))
+              (Map.lookup k)
 
 
 -- |
@@ -238,15 +233,9 @@ mapL k = Lens
 --
 -- >>> set (setL 33) (Set.fromList [1..5]) False
 -- fromList [1,2,3,4,5]
-setL ::
-  Ord k =>
-  k
-  -> Lens (Set k) Bool
-setL k = Lens
-         (\sk b -> if b 
-                   then Set.insert k sk
-                   else Set.delete k sk)
-         (\sk -> Set.member k sk)
+setL :: Ord k => k -> Lens (Set k) Bool
+setL k = Lens (\sk -> bool (Set.delete k sk) (Set.insert k sk))
+              (Set.member k)
 
 -- |
 --
@@ -258,15 +247,11 @@ setL k = Lens
 compose :: Lens b c -> Lens a b -> Lens a c
 compose (Lens sbc gbc) (Lens sab gab) =
     Lens (\a c -> sab a (sbc (gab a) c)) 
-         (\a -> gbc (gab a))
+         (gbc . gab)
 
 -- | An alias for @compose@.
-(|.) ::
-  Lens b c
-  -> Lens a b
-  -> Lens a c
-(|.) =
-  compose
+(|.) :: Lens b c -> Lens a b -> Lens a c
+(|.) = compose
 
 infixr 9 |.
 
@@ -277,10 +262,9 @@ infixr 9 |.
 --
 -- >>> set identity 3 4
 -- 4
-identity ::
-  Lens a a
-identity = Lens (\_ b -> b)
-                (\a -> a)
+identity :: Lens a a
+identity = Lens (flip const)
+                id
 
 -- |
 --
@@ -289,19 +273,13 @@ identity = Lens (\_ b -> b)
 --
 -- >>> set (product fstL sndL) (("abc", 3), (4, "def")) ("ghi", "jkl")
 -- (("ghi",3),(4,"jkl"))
-product ::
-  Lens a b
-  -> Lens c d
-  -> Lens (a, c) (b, d)
-product (Lens sab gab) (Lens scd gcd') = 
-    Lens (\(a,c) (b,d) -> (sab a b, scd c d))
-         (\(a,c) -> (gab a, gcd' c))
+product :: Lens a b -> Lens c d -> Lens (a, c) (b, d)
+product (Lens s1 g1) (Lens s2 g2) = 
+    Lens (\(a,c) (b,d) -> (s1 a b, s2 c d))
+         (\(a,c) -> (g1 a, g2 c))
 
 -- | An alias for @product@.
-(***) ::
-  Lens a b
-  -> Lens c d
-  -> Lens (a, c) (b, d)
+(***) :: Lens a b -> Lens c d -> Lens (a, c) (b, d)
 (***) =
   product
 
@@ -320,94 +298,54 @@ infixr 3 ***
 --
 -- >>> set (choice fstL sndL) (Right ("abc", 7)) 8
 -- Right ("abc",8)
-choice ::
-  Lens a x
-  -> Lens b x
-  -> Lens (Either a b) x
+choice :: Lens a x -> Lens b x -> Lens (Either a b) x
 choice (Lens sax gax) (Lens sbx gbx) =
-    Lens (\eab x -> case eab of
-                        (Left a)  -> Left (sax a x)
-                        (Right b) -> Right (sbx b x)
-         )
-         (\eab -> case eab of
-                    (Left a)  -> gax a
-                    (Right b) -> gbx b
-         )
+    Lens (\eab x -> either (\a -> Left (sax a x)) (\b -> Right (sbx b x)) eab)
+         (either gax gbx)
 
 -- | An alias for @choice@.
-(|||) ::
-  Lens a x
-  -> Lens b x
-  -> Lens (Either a b) x
-(|||) =
-  choice
+(|||) :: Lens a x -> Lens b x -> Lens (Either a b) x
+(|||) = choice
 
 infixr 2 |||
 
 ----
 
-cityL ::
-  Lens Locality String
-cityL =
-  Lens
-    (\(Locality _ t y) c -> Locality c t y)
-    (\(Locality c _ _) -> c)
+cityL :: Lens Locality String
+cityL = Lens (\(Locality _ t y) c -> Locality c t y)
+             (\(Locality c _ _) -> c)
 
-stateL ::
-  Lens Locality String
-stateL =
-  Lens
-    (\(Locality c _ y) t -> Locality c t y)
-    (\(Locality _ t _) -> t)
+stateL :: Lens Locality String
+stateL = Lens (\(Locality c _ y) t -> Locality c t y)
+              (\(Locality _ t _) -> t)
 
-countryL ::
-  Lens Locality String
-countryL =
-  Lens
-    (\(Locality c t _) y -> Locality c t y)
-    (\(Locality _ _ y) -> y)
+countryL :: Lens Locality String
+countryL = Lens (\(Locality c t _) y -> Locality c t y)
+                (\(Locality _ _ y) -> y)
 
-streetL ::
-  Lens Address String
-streetL =
-  Lens
-    (\(Address _ s l) t -> Address t s l)
-    (\(Address t _ _) -> t)
+streetL :: Lens Address String
+streetL = Lens (\(Address _ s l) t -> Address t s l)
+               (\(Address t _ _) -> t)
 
-suburbL ::
-  Lens Address String
-suburbL =
-  Lens
-    (\(Address t _ l) s -> Address t s l)
-    (\(Address _ s _) -> s)
+suburbL :: Lens Address String
+suburbL = Lens (\(Address t _ l) s -> Address t s l)
+               (\(Address _ s _) -> s)
 
-localityL ::
-  Lens Address Locality
-localityL =
-  Lens
-    (\(Address t s _) l -> Address t s l)
-    (\(Address _ _ l) -> l)
+localityL :: Lens Address Locality
+localityL = Lens (\(Address t s _) l -> Address t s l)
+                 (\(Address _ _ l) -> l)
 
-ageL ::
-  Lens Person Int
-ageL =
-  Lens
-    (\(Person _ n d) a -> Person a n d)
-    (\(Person a _ _) -> a)
+ageL :: Lens Person Int
+ageL = Lens (\(Person _ n d) a -> Person a n d)
+            (\(Person a _ _) -> a)
 
-nameL ::
-  Lens Person String
-nameL =
-  Lens
-    (\(Person a _ d) n -> Person a n d)
-    (\(Person _ n _) -> n)
+nameL :: Lens Person String
+nameL = Lens (\(Person a _ d) n -> Person a n d)
+             (\(Person _ n _) -> n)
 
-addressL ::
-  Lens Person Address
-addressL =
-  Lens
-    (\(Person a n _) d -> Person a n d)
-    (\(Person _ _ d) -> d)
+addressL :: Lens Person Address
+addressL = Lens (\(Person a n _) d -> Person a n d)
+                (\(Person _ _ d) -> d)
 
 -- |
 --
@@ -416,9 +354,7 @@ addressL =
 --
 -- >>> getSuburb mary
 -- "Maryland"
-getSuburb ::
-  Person
-  -> String
+getSuburb :: Person -> String
 getSuburb = get (suburbL |. addressL)
 
 
@@ -429,10 +365,7 @@ getSuburb = get (suburbL |. addressL)
 --
 -- >>> setStreet mary "Some Other St"
 -- Person 28 "Mary" (Address "Some Other St" "Maryland" (Locality "Mary Mary" "Western Mary" "Maristan"))
-setStreet ::
-  Person
-  -> String
-  -> Person
+setStreet :: Person -> String -> Person
 setStreet = set (streetL |. addressL)
 
 -- |
@@ -442,9 +375,7 @@ setStreet = set (streetL |. addressL)
 --
 -- >>> getAgeAndCountry (mary, fredLocality)
 -- (28,"Fredalia")
-getAgeAndCountry ::
-  (Person, Locality)
-  -> (Int, String)
+getAgeAndCountry :: (Person, Locality) -> (Int, String)
 getAgeAndCountry = get (product ageL countryL)
 
 
@@ -455,8 +386,7 @@ getAgeAndCountry = get (product ageL countryL)
 --
 -- >>> setCityAndLocality (mary, fredAddress) ("Some Other City", maryLocality)
 -- (Person 28 "Mary" (Address "83 Mary Ln" "Maryland" (Locality "Some Other City" "Western Mary" "Maristan")),Address "15 Fred St" "Fredville" (Locality "Mary Mary" "Western Mary" "Maristan"))
-setCityAndLocality ::
-  (Person, Address) -> (String, Locality) -> (Person, Address)
+setCityAndLocality :: (Person, Address) -> (String, Locality) -> (Person, Address)
 setCityAndLocality = set (product (cityL |. localityL |. addressL) localityL)
   
 -- |
@@ -466,9 +396,7 @@ setCityAndLocality = set (product (cityL |. localityL |. addressL) localityL)
 --
 -- >>> getSuburbOrCity (Right fredLocality)
 -- "Fredmania"
-getSuburbOrCity ::
-  Either Address Locality
-  -> String
+getSuburbOrCity :: Either Address Locality -> String
 getSuburbOrCity = get (suburbL ||| cityL)
 
 -- |
@@ -478,10 +406,7 @@ getSuburbOrCity = get (suburbL ||| cityL)
 --
 -- >>> setStreetOrState (Left fred) "Some Other St"
 -- Left (Person 24 "Fred" (Address "Some Other St" "Fredville" (Locality "Fredmania" "New South Fred" "Fredalia")))
-setStreetOrState ::
-  Either Person Locality
-  -> String
-  -> Either Person Locality
+setStreetOrState :: Either Person Locality -> String -> Either Person Locality
 setStreetOrState = set ((streetL |. addressL) ||| stateL)
 
 -- |
@@ -491,7 +416,5 @@ setStreetOrState = set ((streetL |. addressL) ||| stateL)
 --
 -- >>> modifyCityUppercase mary
 -- Person 28 "Mary" (Address "83 Mary Ln" "Maryland" (Locality "MARY MARY" "Western Mary" "Maristan"))
-modifyCityUppercase ::
-  Person
-  -> Person
+modifyCityUppercase :: Person -> Person
 modifyCityUppercase = modify (cityL |. localityL |. addressL) (map toUpper)

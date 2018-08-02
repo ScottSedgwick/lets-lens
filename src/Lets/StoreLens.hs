@@ -70,18 +70,16 @@ mapS :: (a -> b) -> Store s a -> Store s b
 mapS f (Store g s) = Store (f . g) s
 
 duplicateS :: Store s a -> Store s (Store s a)
-duplicateS st = Store (\x -> Store (\y -> setS st y) x) (getS st)
+duplicateS (Store s g) = Store (Store s) g
 
 extendS :: (Store s a -> b) -> Store s a -> Store s b
-extendS f ssa = Store (\s -> b) (getS ssa)
-    where b = f ssa
+extendS f = mapS f . duplicateS
 
 extractS :: Store s a -> a
 extractS st = setS st (getS st)
 
 ----
 
--- data Store a b = Store (a -> b) a
 data Lens a b = Lens (a -> Store b a)
 
 -- |
@@ -125,6 +123,9 @@ setsetLaw :: Eq a => Lens a b -> a -> b -> b -> Bool
 setsetLaw l a b1 b2 = set l (set l a b1) b2 == set l a b2
 
 ----
+newtype Const a b = Const { getConst :: a }
+instance Functor (Const m) where
+    fmap _ (Const v) = Const v
 
 -- |
 --
@@ -138,11 +139,19 @@ setsetLaw l a b1 b2 = set l (set l a b1) b2 == set l a b2
 --
 -- prop> let types = (x :: Int, y :: String) in modify sndL id (x, y) == (x, y)
 modify :: Lens a b -> (b -> b) -> a -> a
-modify l f a = set l a b
-  where b = f (get l a)
+modify l f a = getConst fa
+  where
+    -- b2fb = (\(x :: b) -> Const { getConst = (f x) } ) :: (b -> Const b b2)
+    fa = fmodify l _ a
 
--- get :: Lens a b -> a -> b
--- set :: Lens a b -> a -> b -> a
+-- fmodify :: Functor f => Lens a b -> (b -> f b) -> a -> f a
+-- fmodify l f a =  (set l a) <$> (f (get l a))
+
+
+
+-- modify l f a = set l a b
+--   where b = f (get l a)
+
 
 -- | An alias for @modify@.
 (%~) :: Lens a b -> (b -> b) -> a -> a
@@ -162,7 +171,11 @@ infixr 4 %~
 --
 -- prop> let types = (x :: Int, y :: String) in set sndL (x, y) z == (sndL .~ z $ (x, y))
 (.~) :: Lens a b -> b -> a -> a
-(.~) l b a = set l a b
+--(.~) l b a = set l a b
+
+--(.~) l b a = modify l (const b) a
+(.~) l b a = set l a ((const b) (get l a))
+
 
 infixl 5 .~
 

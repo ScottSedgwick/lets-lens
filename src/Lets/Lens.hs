@@ -91,6 +91,7 @@ import Prelude hiding (product)
 -- >>> import qualified Data.Map as Map(fromList)
 -- >>> import qualified Data.Set as Set(fromList)
 -- >>> import Data.Char(ord)
+-- >>> import Data.Monoid(Sum(..))
 -- >>> import Lets.Data
 
 -- Let's remind ourselves of Traversable, noting Foldable and Functor.
@@ -104,158 +105,121 @@ import Prelude hiding (product)
 
 -- | Observe that @fmap@ can be recovered from @traverse@ using @Identity@.
 --
--- /Reminder:/ fmap :: Functor t => (a -> b) -> t a -> t b
-fmapT ::
-  Traversable t =>
-  (a -> b)
-  -> t a
-  -> t b
-fmapT =
-  error "todo: fmapT"
+-- /Reminder:/ fmap     :: Functor t     => (a ->   b) -> t a -> t b
+-- /Reminder:/ traverse :: Applicative f => (a -> f b) -> t a -> f (t b)
+-- /Reminder:/ data Identity a = Identity { getIdentity :: a } deriving (Eq, Show)
+fmapT :: Traversable t => (a -> b) -> t a -> t b
+fmapT f = getIdentity . traverse (Identity . f)
+
+-- |
+--
+-- >>> fmapT (+1) [1,2,3]
+-- [2,3,4]
+
 
 -- | Let's refactor out the call to @traverse@ as an argument to @fmapT@.
-over :: 
-  ((a -> Identity b) -> s -> Identity t)
-  -> (a -> b)
-  -> s
-  -> t
-over =
-  error "todo: over"
+over :: ((a -> Identity b) -> s -> Identity t) -> (a -> b) -> s -> t
+over l f = getIdentity . l (Identity . f)
 
 -- | Here is @fmapT@ again, passing @traverse@ to @over@.
-fmapTAgain ::
-  Traversable t =>
-  (a -> b)
-  -> t a
-  -> t b
-fmapTAgain =
-  error "todo: fmapTAgain"
+fmapTAgain :: Traversable t => (a -> b) -> t a -> t b
+fmapTAgain = over traverse
+
+-- |
+--
+-- >>> fmapTAgain (+1) [1,2,3]
+-- [2,3,4]
+
 
 -- | Let's create a type-alias for this type of function.
-type Set s t a b =
-  (a -> Identity b)
-  -> s
-  -> Identity t
+type Set s t a b = (a -> Identity b) -> s -> Identity t
 
 -- | Let's write an inverse to @over@ that does the @Identity@ wrapping &
 -- unwrapping.
-sets ::
-  ((a -> b) -> s -> t)
-  -> Set s t a b  
-sets =
-  error "todo: sets"
+sets :: ((a -> b) -> s -> t) -> Set s t a b  
+sets t f = Identity . t (getIdentity . f)
 
-mapped ::
-  Functor f =>
-  Set (f a) (f b) a b
-mapped =
-  error "todo: mapped"
+mapped :: Functor f => Set (f a) (f b) a b 
+mapped = sets fmap
 
-set ::
-  Set s t a b
-  -> s
-  -> b
-  -> t
-set =
-  error "todo: set"
+set :: Set s t a b -> s -> b -> t
+set t s b = getIdentity (t (const (Identity b)) s)
+
+-- set t s b = over t (const b) s
+-- over l f = getIdentity . l (Identity . f)
 
 ----
 
 -- | Observe that @foldMap@ can be recovered from @traverse@ using @Const@.
 --
 -- /Reminder:/ foldMap :: (Foldable t, Monoid b) => (a -> b) -> t a -> b
-foldMapT ::
-  (Traversable t, Monoid b) =>
-  (a -> b)
-  -> t a
-  -> b
-foldMapT =
-  error "todo: foldMapT"
+-- /Reminder:/ traverse :: Applicative f => (a -> f b) -> t a -> f (t b)
+-- /Reminder:/ data Const a b = Const { getConst :: a } deriving (Eq, Show)
+foldMapT :: (Traversable t, Monoid b) => (a -> b) -> t a -> b
+foldMapT f = getConst . traverse (Const . f) 
+
+-- |
+--
+-- >>> foldMapT Sum [1..10]
+-- Sum {getSum = 55}
 
 -- | Let's refactor out the call to @traverse@ as an argument to @foldMapT@.
-foldMapOf ::
-  ((a -> Const r b) -> s -> Const r t)
-  -> (a -> r)
-  -> s
-  -> r
-foldMapOf =
-  error "todo: foldMapOf"
+foldMapOf :: ((a -> Const r b) -> s -> Const r t) -> (a -> r) -> s -> r
+foldMapOf t f = getConst . t (Const . f)
 
 -- | Here is @foldMapT@ again, passing @traverse@ to @foldMapOf@.
-foldMapTAgain ::
-  (Traversable t, Monoid b) =>
-  (a -> b)
-  -> t a
-  -> b
-foldMapTAgain =
-  error "todo: foldMapTAgain"
+foldMapTAgain :: (Traversable t, Monoid b) => (a -> b) -> t a -> b
+foldMapTAgain = foldMapOf traverse
+
+-- |
+--
+-- >>> foldMapTAgain Sum [1..10]
+-- Sum {getSum = 55}
 
 -- | Let's create a type-alias for this type of function.
-type Fold s t a b =
-  forall r.
-  Monoid r =>
+type Fold s t a b = forall r. Monoid r =>
   (a -> Const r b)
   -> s
   -> Const r t
 
 -- | Let's write an inverse to @foldMapOf@ that does the @Const@ wrapping &
 -- unwrapping.
-folds ::
-  ((a -> b) -> s -> t)
-  -> (a -> Const b a)
-  -> s
-  -> Const t s
-folds =
-  error "todo: folds"
+folds :: ((a -> b) -> s -> t) -> (a -> Const b a) -> s -> Const t s
+folds l f = Const . l (getConst . f)
 
-folded ::
-  Foldable f =>
-  Fold (f a) (f a) a a
-folded =
-  error "todo: folded"
+folded :: Foldable t => Fold (t a) (t a) a a 
+folded f = Const . foldMap (getConst . f) 
+-- folded = folds foldMap
+
+wrapFoldable :: Foldable f => Const r a -> Const r (f a)
+wrapFoldable x = Const (getConst x)
 
 ----
 
 -- | @Get@ is like @Fold@, but without the @Monoid@ constraint.
-type Get r s a =
-  (a -> Const r a)
-  -> s
-  -> Const r s
+type Get r s a = (a -> Const r a) -> s -> Const r s
 
-get ::
-  Get a s a
-  -> s
-  -> a
-get =
-  error "todo: get"
+get :: Get a s a -> s -> a
+get r = getConst . r Const
 
 ----
 
 -- | Let's generalise @Identity@ and @Const r@ to any @Applicative@ instance.
-type Traversal s t a b =
-  forall f.
-  Applicative f =>
-  (a -> f b)
-  -> s
-  -> f t
+type Traversal s t a b = forall f. Applicative f => (a -> f b) -> s -> f t
 
 -- | Traverse both sides of a pair.
-both ::
-  Traversal (a, a) (b, b) a b
-both =
-  error "todo: both"
+both :: Traversal (a, a) (b, b) a b
+both f (a1,a2) = (\x y -> (x,y)) <$> (f a1) <*> (f a2)
 
 -- | Traverse the left side of @Either@.
-traverseLeft ::
-  Traversal (Either a x) (Either b x) a b
-traverseLeft =
-  error "todo: traverseLeft"
+traverseLeft :: Traversal (Either a x) (Either b x) a b
+traverseLeft f (Left a)  = Left <$> (f a)
+traverseLeft _ (Right x) = pure (Right x)
 
 -- | Traverse the right side of @Either@.
-traverseRight ::
-  Traversal (Either x a) (Either x b) a b
-traverseRight =
-  error "todo: traverseRight"
+traverseRight :: Traversal (Either x a) (Either x b) a b
+traverseRight _ (Left x)  = pure (Left x)
+traverseRight f (Right a) = Right <$> (f a)
 
 type Traversal' a b =
   Traversal a a b b
@@ -267,36 +231,22 @@ type Traversal' a b =
 -- @Const r@ is @Functor@.
 --
 -- Consequently, we arrive at our lens derivation:
-type Lens s t a b =
-  forall f.
-  Functor f =>
-  (a -> f b)
-  -> s
-  -> f t
+type Lens s t a b = forall f. Functor f => (a -> f b) -> s -> f t
 
 ----
 
 -- | A prism is a less specific type of traversal.
-type Prism s t a b =
-  forall p f.
-  (Choice p, Applicative f) =>
-  p a (f b)
-  -> p s (f t)
+type Prism s t a b = forall p f. (Choice p, Applicative f) => p a (f b) -> p s (f t)
 
-_Left ::
-  Prism (Either a x) (Either b x) a b
-_Left =
-  error "todo: _Left"
+_Left :: Prism (Either a x) (Either b x) a b
+-- _Left = dimap id (either (fmap Left) (pure . Right)) . left
+_Left = dimap (either Right (Left . Right)) (either pure (fmap Left)) . right
 
-_Right ::
-  Prism (Either x a) (Either x b) a b 
-_Right =
-  error "todo: _Right"
+_Right :: Prism (Either x a) (Either x b) a b 
+--_Right = dimap id (either (pure . Left) (fmap Right)) . right
+_Right = dimap (either (Left . Left) Right) (either pure (fmap Right)) . right
 
-prism ::
-  (b -> t)
-  -> (s -> Either t a)
-  -> Prism s t a b
+prism :: (b -> t) -> (s -> Either t a) -> Prism s t a b
 prism =
   error "todo: prism"
 
@@ -340,13 +290,19 @@ type Prism' a b =
 -- prop> let types = (x :: Int, y :: String) in modify fstL id (x, y) == (x, y)
 --
 -- prop> let types = (x :: Int, y :: String) in modify sndL id (x, y) == (x, y)
-modify ::
-  Lens s t a b
-  -> (a -> b)
-  -> s
-  -> t
-modify _ _ _ =
-  error "todo: modify"
+modify :: Lens s t a b -> (a -> b) -> s -> t
+modify = error "todo: modify"
+
+-- type Lens s t a b = forall f. Functor f => (a -> f b) -> s -> f t
+-- (<$>) :: Functor f => (a -> b) -> f a -> f b
+
+-- type Get r s a = (a -> Const r a) -> s -> Const r s
+-- get :: Get a s a -> s -> a
+-- get r s = getConst $ r Const s
+
+-- type Set s t a b = (a -> Identity b) -> s -> Identity t
+-- set :: Set s t a b -> s -> b -> t
+-- set r a b = getIdentity (r (const (Identity b)) a)
 
 -- | An alias for @modify@.
 (%~) ::

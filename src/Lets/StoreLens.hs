@@ -139,18 +139,29 @@ instance Functor (Const m) where
 --
 -- prop> let types = (x :: Int, y :: String) in modify sndL id (x, y) == (x, y)
 modify :: Lens a b -> (b -> b) -> a -> a
-modify l f a = getConst fa
-  where
-    -- b2fb = (\(x :: b) -> Const { getConst = (f x) } ) :: (b -> Const b b2)
-    fa = fmodify l _ a
+modify l f a = set l a (f (get l a))
+-- modify l f a = getConst fa
+--   where
+--     fa = fmodify l bfb a
+--     bfb = \b -> Const (f b)
 
+-- TODO: Try to implement modify using fmodify
 -- fmodify :: Functor f => Lens a b -> (b -> f b) -> a -> f a
 -- fmodify l f a =  (set l a) <$> (f (get l a))
 
+-- data Const a b =
+--     Const {
+--       getConst :: 
+--         a
+--     }
+--     deriving (Eq, Show)
+  
+--   instance Functor (Const a) where
+--     fmap _ (Const a) =
+--       Const a
 
 
--- modify l f a = set l a b
---   where b = f (get l a)
+
 
 
 -- | An alias for @modify@.
